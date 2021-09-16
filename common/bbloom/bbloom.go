@@ -30,18 +30,21 @@ import (
 	"sync"
 )
 
+
+// 计算首个满足 >= ui64 的数值，同时返回它是 2 的几次幂
 func getSize(ui64 uint64) (size uint64, exponent uint64) {
 	if ui64 < uint64(512) {
 		ui64 = uint64(512)
 	}
 	size = uint64(1)
 	for size < ui64 {
-		size <<= 1
-		exponent++
+		size <<= 1	// 左移 1 位
+		exponent++	// 幂 +1
 	}
 	return size, exponent
 }
 
+// 计算误差率
 func calcSizeByWrongPositives(numEntries, wrongs float64) (uint64, uint64) {
 	size := -1 * numEntries * math.Log(wrongs) / math.Pow(float64(0.69314718056), 2)
 	locs := math.Ceil(float64(0.69314718056) * size / numEntries)
@@ -53,13 +56,20 @@ var ErrInvalidParms = errors.New("One of parameters was outside of allowed range
 
 // New
 // returns a new bloomfilter
+//
+//
+//
 func New(params ...float64) (bloomfilter *Bloom, err error) {
+	// 总元素数，分片数
 	var entries, locs uint64
+
+	// 必须有 2 个变量：总数、错误率
 	if len(params) == 2 {
 		if params[0] < 0 || params[1] < 0 {
 			return nil, ErrInvalidParms
 		}
 		if params[1] < 1 {
+			// 计算总数
 			entries, locs = calcSizeByWrongPositives(math.Max(params[0], 1), params[1])
 		} else {
 			entries, locs = uint64(params[0]), uint64(params[1])
@@ -67,7 +77,10 @@ func New(params ...float64) (bloomfilter *Bloom, err error) {
 	} else {
 		return nil, ErrUsage
 	}
+
+	// 计算首个满足 >= entries 的数值 size ，同时返回它是 2 的几次幂。
 	size, exponent := getSize(uint64(entries))
+
 	bloomfilter = &Bloom{
 		sizeExp: exponent,
 		size:    size - 1,
@@ -75,6 +88,7 @@ func New(params ...float64) (bloomfilter *Bloom, err error) {
 		shift:   64 - exponent,
 		bitset:  make([]uint64, size>>6),
 	}
+
 	return bloomfilter, nil
 }
 
@@ -99,6 +113,7 @@ type bloomJSONImExport struct {
 	SetLocs   uint64
 }
 
+
 //
 // Bloom filter
 type Bloom struct {
@@ -106,16 +121,18 @@ type Bloom struct {
 	bitset  []uint64
 	sizeExp uint64
 	size    uint64
-	setLocs uint64
-	shift   uint64
-
-	content uint64
+	setLocs uint64	// 一个 element 占几个 bit
+	shift   uint64	//
+	content uint64	// 总 elements count
 }
+
 
 // ElementsAdded returns the number of elements added to the bloom filter.
 func (bl *Bloom) ElementsAdded() uint64 {
 	return bl.content
 }
+
+
 
 // <--- http://www.cse.yorku.ca/~oz/hash.html
 // modified Berkeley DB Hash (32bit)
@@ -137,8 +154,13 @@ func (bl *Bloom) ElementsAdded() uint64 {
 // Add
 // set the bit(s) for entry; Adds an entry to the Bloom filter
 func (bl *Bloom) Add(entry []byte) {
+	// 总数 +1
 	bl.content++
+
+	// 计算 hash 值
 	l, h := bl.sipHash(entry)
+
+	// 设置 setLocs 个 bits
 	for i := uint64(0); i < (*bl).setLocs; i++ {
 		bl.set((h + i*l) & (*bl).size)
 	}
